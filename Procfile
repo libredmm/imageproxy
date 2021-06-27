@@ -1,1 +1,1 @@
-web: cmd/imageproxy/imageproxy
+web: imageproxy
