@@ -1,1 +1,1 @@
-web: imageproxy
+web: imageproxy -addr ":$PORT"
