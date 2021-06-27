@@ -1,3 +1,5 @@
+// +heroku install ./cmd/imageproxy
+
 module willnorris.com/go/imageproxy
 
 require (
