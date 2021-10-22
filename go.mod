@@ -1,4 +1,5 @@
 // +heroku install ./cmd/imageproxy
+// +heroku goVersion go1.17
 
 module willnorris.com/go/imageproxy
 
