@@ -4,6 +4,7 @@
 package imageproxy
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,6 +31,7 @@ const (
 	optCropWidth       = "cw"
 	optCropHeight      = "ch"
 	optSmartCrop       = "sc"
+	optReferer         = "_ref"
 )
 
 // URLError reports a malformed URL error.
@@ -80,6 +82,9 @@ type Options struct {
 
 	// Automatically find good crop points based on image content.
 	SmartCrop bool
+
+	// Referer
+	Referer string
 }
 
 func (o Options) String() string {
@@ -279,6 +284,9 @@ func ParseOptions(str string) Options {
 			if h := size[1]; h != "" {
 				options.Height, _ = strconv.ParseFloat(h, 64)
 			}
+		case strings.HasPrefix(opt, optReferer):
+			referer, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(opt, optReferer))
+			options.Referer = string(referer)
 		default:
 			if size, err := strconv.ParseFloat(opt, 64); err == nil {
 				options.Width = size

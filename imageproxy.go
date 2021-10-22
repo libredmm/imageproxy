@@ -179,6 +179,9 @@ func (p *Proxy) serveImage(w http.ResponseWriter, r *http.Request) {
 		// pass along the referer header from the original request
 		copyHeader(actualReq.Header, r.Header, "referer")
 	}
+	if req.Options.Referer != "" {
+		actualReq.Header.Set("Referer", req.Options.Referer)
+	}
 	if p.FollowRedirects {
 		// FollowRedirects is true (default), ensure that the redirected host is allowed
 		p.Client.CheckRedirect = func(newreq *http.Request, via []*http.Request) error {
