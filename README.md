@@ -22,7 +22,7 @@ additional image adjustment options.
 
 I aim to keep imageproxy compatible with the two [most recent major go
 releases][]. I also keep track of the minimum go version that still works
-(currently go1.11 with modules enabled), but that might change at any time. You
+(currently go1.13 with modules enabled), but that might change at any time. You
 can see the go versions that are tested against in
 [.github/workflows/tests.yml][].
 
@@ -98,7 +98,7 @@ image][material-animation] resized to 200px square and rotated 270 degrees:
 
 Install the package using:
 
-    go get willnorris.com/go/imageproxy/cmd/imageproxy
+    go install willnorris.com/go/imageproxy/cmd/imageproxy@latest
 
 Once installed, ensure `$GOPATH/bin` is in your `$PATH`, then run the proxy
 using:
@@ -340,11 +340,11 @@ in the [README](https://github.com/oreillymedia/prototype-imageproxy/blob/master
 
 ### Docker ###
 
-A docker image is available at [`willnorris/imageproxy`](https://registry.hub.docker.com/r/willnorris/imageproxy).
+A docker image is available at [`ghcr.io/willnorris/imageproxy`](https://github.com/willnorris/imageproxy/pkgs/container/imageproxy).
 
 You can run it by
 ```
-docker run -p 8080:8080 willnorris/imageproxy -addr 0.0.0.0:8080
+docker run -p 8080:8080 ghcr.io/willnorris/imageproxy -addr 0.0.0.0:8080
 ```
 
 Or in your Dockerfile:
@@ -357,6 +357,10 @@ If running imageproxy inside docker with a bind-mounted on-disk cache, make sure
 the container is running as a user that has write permission to the mounted host
 directory.  See more details in
 [#198](https://github.com/willnorris/imageproxy/issues/198).
+
+Note that all configuration options can be set using [environment
+variables](#environment-variables), which is often the preferred approach for
+containers.
 
 ### nginx ###
 
