@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"path"
@@ -36,13 +36,14 @@ func (c *cache) Get(key string) ([]byte, bool) {
 
 	resp, err := c.GetObject(input)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() != "NoSuchKey" {
+		var aerr awserr.Error
+		if errors.As(err, &aerr) && aerr.Code() != "NoSuchKey" {
 			log.Printf("error fetching from s3: %v", aerr)
 		}
 		return nil, false
 	}
 
-	value, err := ioutil.ReadAll(resp.Body)
+	value, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("error reading s3 response body: %v", err)
 		return nil, false

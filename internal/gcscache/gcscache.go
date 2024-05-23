@@ -9,8 +9,8 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"io"
-	"io/ioutil"
 	"log"
 	"path"
 
@@ -27,14 +27,14 @@ type cache struct {
 func (c *cache) Get(key string) ([]byte, bool) {
 	r, err := c.object(key).NewReader(ctx)
 	if err != nil {
-		if err != storage.ErrObjectNotExist {
+		if !errors.Is(err, storage.ErrObjectNotExist) {
 			log.Printf("error reading from gcs: %v", err)
 		}
 		return nil, false
 	}
 	defer r.Close()
 
-	value, err := ioutil.ReadAll(r)
+	value, err := io.ReadAll(r)
 	if err != nil {
 		log.Printf("error reading from gcs: %v", err)
 		return nil, false

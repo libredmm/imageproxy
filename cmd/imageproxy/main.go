@@ -7,7 +7,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -20,7 +19,6 @@ import (
 	"github.com/die-net/lrucache"
 	"github.com/die-net/lrucache/twotier"
 	"github.com/gomodule/redigo/redis"
-	"github.com/gorilla/mux"
 	"github.com/gregjones/httpcache/diskcache"
 	rediscache "github.com/gregjones/httpcache/redis"
 	"github.com/peterbourgon/diskv"
@@ -39,6 +37,7 @@ var referrers = flag.String("referrers", "", "comma separated list of allowed re
 var includeReferer = flag.Bool("includeReferer", false, "include referer header in remote requests")
 var followRedirects = flag.Bool("followRedirects", true, "follow redirects")
 var baseURL = flag.String("baseURL", "", "default base URL for relative remote URLs")
+var passRequestHeaders = flag.String("passRequestHeaders", "", "comma separatetd list of request headers to pass to remote server")
 var cache tieredCache
 var signatureKeys signatureKeyList
 var scaleUp = flag.Bool("scaleUp", false, "allow images to scale beyond their original dimensions")
@@ -70,6 +69,9 @@ func main() {
 	if *contentTypes != "" {
 		p.ContentTypes = strings.Split(*contentTypes, ",")
 	}
+	if *passRequestHeaders != "" {
+		p.PassRequestHeaders = strings.Split(*passRequestHeaders, ",")
+	}
 	p.SignatureKeys = signatureKeys
 	if *baseURL != "" {
 		var err error
@@ -89,12 +91,14 @@ func main() {
 	server := &http.Server{
 		Addr:    *addr,
 		Handler: p,
+
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
-	r := mux.NewRouter().SkipClean(true).UseEncodedPath()
-	r.PathPrefix("/").Handler(p)
 	fmt.Printf("imageproxy listening on %s\n", server.Addr)
-	log.Fatal(http.ListenAndServe(*addr, r))
+	log.Fatal(server.ListenAndServe())
 }
 
 type signatureKeyList [][]byte
@@ -109,7 +113,7 @@ func (skl *signatureKeyList) Set(value string) error {
 		if strings.HasPrefix(v, "@") {
 			file := strings.TrimPrefix(v, "@")
 			var err error
-			key, err = ioutil.ReadFile(file)
+			key, err = os.ReadFile(file)
 			if err != nil {
 				log.Fatalf("error reading signature file: %v", err)
 			}
@@ -157,7 +161,7 @@ func parseCache(c string) (imageproxy.Cache, error) {
 
 	u, err := url.Parse(c)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing cache flag: %v", err)
+		return nil, fmt.Errorf("error parsing cache flag: %w", err)
 	}
 
 	switch u.Scheme {

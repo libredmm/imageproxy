@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"net"
@@ -30,6 +29,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	tphttp "willnorris.com/go/imageproxy/third_party/http"
 )
+
+// Maximum number of redirection-followings allowed.
+const maxRedirects = 10
 
 // Proxy serves image requests.
 type Proxy struct {
@@ -85,6 +87,10 @@ type Proxy struct {
 
 	// The User-Agent used by imageproxy when requesting origin image
 	UserAgent string
+
+	// PassRequestHeaders identifies HTTP headers to pass from inbound
+	// requests to the proxied server.
+	PassRequestHeaders []string
 }
 
 // NewProxy constructs a new proxy.  The provided http RoundTripper will be
@@ -134,7 +140,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path == "/metrics" {
-		var h http.Handler = promhttp.Handler()
+		var h = promhttp.Handler()
 		h.ServeHTTP(w, r)
 		return
 	}
@@ -182,10 +188,19 @@ func (p *Proxy) serveImage(w http.ResponseWriter, r *http.Request) {
 	if req.Options.Referer != "" {
 		actualReq.Header.Set("Referer", req.Options.Referer)
 	}
+	if len(p.PassRequestHeaders) != 0 {
+		copyHeader(actualReq.Header, r.Header, p.PassRequestHeaders...)
+	}
 	if p.FollowRedirects {
 		// FollowRedirects is true (default), ensure that the redirected host is allowed
 		p.Client.CheckRedirect = func(newreq *http.Request, via []*http.Request) error {
-			if hostMatches(p.DenyHosts, newreq.URL) || (len(p.AllowHosts) > 0 && !hostMatches(p.AllowHosts, newreq.URL)) {
+			if len(via) > maxRedirects {
+				if p.Verbose {
+					p.logf("followed too many redirects (%d).", len(via))
+				}
+				return errTooManyRedirects
+			}
+			if hostMatches(p.DenyHosts, newreq.URL) {
 				http.Error(w, msgNotAllowedInRedirect, http.StatusForbidden)
 				return errNotAllowed
 			}
@@ -209,6 +224,12 @@ func (p *Proxy) serveImage(w http.ResponseWriter, r *http.Request) {
 	// close the original resp.Body, even if we wrap it in a NopCloser below
 	defer resp.Body.Close()
 
+	// return early on 404s.  Perhaps handle additional status codes here?
+	if resp.StatusCode == http.StatusNotFound {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
 	cached := resp.Header.Get(httpcache.XFromCache) == "1"
 	if p.Verbose {
 		p.logf("request: %+v (served from cache: %t)", *actualReq, cached)
@@ -229,7 +250,7 @@ func (p *Proxy) serveImage(w http.ResponseWriter, r *http.Request) {
 	if contentType == "" || contentType == "application/octet-stream" || contentType == "binary/octet-stream" {
 		// try to detect content type
 		b := bufio.NewReader(resp.Body)
-		resp.Body = ioutil.NopCloser(b)
+		resp.Body = io.NopCloser(b)
 		contentType = peekContentType(b)
 	}
 	if resp.ContentLength != 0 && !contentTypeMatches(p.ContentTypes, contentType) {
@@ -263,23 +284,17 @@ func (p *Proxy) serveImage(w http.ResponseWriter, r *http.Request) {
 // the content type.  Returns empty string if error occurs.
 func peekContentType(p *bufio.Reader) string {
 	byt, err := p.Peek(512)
-	if err != nil && err != bufio.ErrBufferFull && err != io.EOF {
+	if err != nil && !errors.Is(err, bufio.ErrBufferFull) && !errors.Is(err, io.EOF) {
 		return ""
 	}
 	return http.DetectContentType(byt)
 }
 
-// copyHeader copies header values from src to dst, adding to any existing
-// values with the same header name.  If keys is not empty, only those header
-// keys will be copied.
-func copyHeader(dst, src http.Header, keys ...string) {
-	if len(keys) == 0 {
-		for k := range src {
-			keys = append(keys, k)
-		}
-	}
-	for _, key := range keys {
-		k := http.CanonicalHeaderKey(key)
+// copyHeader copies values for specified headers from src to dst, adding to
+// any existing values with the same header name.
+func copyHeader(dst, src http.Header, headerNames ...string) {
+	for _, name := range headerNames {
+		k := http.CanonicalHeaderKey(name)
 		for _, v := range src[k] {
 			dst.Add(k, v)
 		}
@@ -287,9 +302,10 @@ func copyHeader(dst, src http.Header, keys ...string) {
 }
 
 var (
-	errReferrer   = errors.New("request does not contain an allowed referrer")
-	errDeniedHost = errors.New("request contains a denied host")
-	errNotAllowed = errors.New("request does not contain an allowed host or valid signature")
+	errReferrer         = errors.New("request does not contain an allowed referrer")
+	errDeniedHost       = errors.New("request contains a denied host")
+	errNotAllowed       = errors.New("request does not contain an allowed host or valid signature")
+	errTooManyRedirects = errors.New("too many redirects")
 
 	msgNotAllowed           = "requested URL is not allowed"
 	msgNotAllowedInRedirect = "requested URL in redirect is not allowed"
@@ -489,7 +505,7 @@ func (t *TransformingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return &http.Response{StatusCode: http.StatusNotModified}, nil
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
